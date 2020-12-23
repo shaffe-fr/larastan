@@ -11,6 +11,7 @@ use NunoMaduro\Larastan\Concerns;
 use NunoMaduro\Larastan\Reflection\EloquentBuilderMethodReflection;
 use PHPStan\Reflection\BrokerAwareExtension;
 use PHPStan\Reflection\ClassReflection;
+use PHPStan\Reflection\Dummy\DummyMethodReflection;
 use PHPStan\Reflection\MethodReflection;
 use PHPStan\Reflection\MethodsClassReflectionExtension;
 use PHPStan\Reflection\ParametersAcceptorSelector;
@@ -50,26 +51,33 @@ final class EloquentBuilderForwardsCallsExtension implements MethodsClassReflect
 
     public function hasMethod(ClassReflection $classReflection, string $methodName): bool
     {
-        return $this->findMethod($classReflection, $methodName) !== null;
+        if ($classReflection->getName() !== EloquentBuilder::class && ! $classReflection->isSubclassOf(EloquentBuilder::class)) {
+            return false;
+        }
+
+        if (in_array($methodName, $this->passthru, true)) {
+            return true;
+        }
+
+        if ($this->getBuilderReflection()->hasNativeMethod($methodName)) {
+            return true;
+        }
+
+        $templateTypeMap = $classReflection->getActiveTemplateTypeMap();
+
+        if (! $templateTypeMap->getType('TModelClass') instanceof ObjectType) {
+            return false;
+        }
+
+        return true;
     }
 
+    /**
+     * @throws ShouldNotHappenException
+     * @throws \PHPStan\Reflection\MissingMethodFromReflectionException
+     */
     public function getMethod(ClassReflection $classReflection, string $methodName): MethodReflection
     {
-        $methodReflection = $this->findMethod($classReflection, $methodName);
-
-        if ($methodReflection === null) {
-            throw new ShouldNotHappenException(sprintf("'%s' not found in %s", $methodName, $classReflection->getName()));
-        }
-
-        return $methodReflection;
-    }
-
-    private function findMethod(ClassReflection $classReflection, string $methodName): ?MethodReflection
-    {
-        if ($classReflection->getName() !== EloquentBuilder::class && ! $classReflection->isSubclassOf(EloquentBuilder::class)) {
-            return null;
-        }
-
         if (in_array($methodName, $this->passthru, true)) {
             $methodReflection = $this->getBuilderReflection()->getNativeMethod($methodName);
 
@@ -135,6 +143,6 @@ final class EloquentBuilderForwardsCallsExtension implements MethodsClassReflect
             }
         }
 
-        return null;
+        return new DummyMethodReflection($methodName);
     }
 }
